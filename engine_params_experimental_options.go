@@ -116,3 +116,18 @@ func (p EngineParams) SetSocketPoolOptions(maxPerPool, maxPerProxyChain, maxPerG
 		"max_sockets_per_group":       maxPerGroup,
 	})
 }
+
+// SetPTLSOptions configures Private TLS (PTLS) session ID authentication.
+// pskHex must be a 64-character hex-encoded 32-byte key.
+func (p EngineParams) SetPTLSOptions(enable bool, pskHex string) error {
+	if !enable {
+		if err := p.SetExperimentalOption("ptls", nil); err != nil {
+			return err
+		}
+		return p.SetExperimentalOption("ptls_psk", nil)
+	}
+	if err := p.SetExperimentalOption("ptls", true); err != nil {
+		return err
+	}
+	return p.SetExperimentalOption("ptls_psk", pskHex)
+}

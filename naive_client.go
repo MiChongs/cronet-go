@@ -3,11 +3,13 @@ package cronet
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"net"
 	"net/url"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -70,6 +72,8 @@ type NaiveClient struct {
 	counter                  atomic.Uint64
 	started                  chan struct{}
 	singleEngine             bool
+	ptlsEnabled              bool
+	ptlsPSK                  string
 	engines                  []Engine
 	streamEngines            []StreamEngine
 	activeConnections        sync.WaitGroup
@@ -98,6 +102,8 @@ type NaiveClientOptions struct {
 	QUIC                     bool
 	QUICCongestionControl    QUICCongestionControl
 	QUICSessionReceiveWindow uint64
+	PTLS                     bool
+	PTLSPSK                  string
 }
 
 func NewNaiveClient(config NaiveClientOptions) (*NaiveClient, error) {
@@ -110,6 +116,15 @@ func NewNaiveClient(config NaiveClientOptions) (*NaiveClient, error) {
 	}
 	if config.DNSResolver == nil {
 		return nil, E.New("DNSResolver is required")
+	}
+
+	var ptlsPSKHex string
+	if config.PTLS {
+		var parseErr error
+		ptlsPSKHex, parseErr = parsePtlsPSK(config.PTLSPSK)
+		if parseErr != nil {
+			return nil, parseErr
+		}
 	}
 
 	serverName := config.ServerName
@@ -170,6 +185,8 @@ func NewNaiveClient(config NaiveClientOptions) (*NaiveClient, error) {
 		receiveWindow:            config.ReceiveWindow,
 		quicSessionReceiveWindow: config.QUICSessionReceiveWindow,
 		started:                  make(chan struct{}),
+		ptlsEnabled:              config.PTLS,
+		ptlsPSK:                  ptlsPSKHex,
 	}, nil
 }
 
@@ -421,6 +438,9 @@ func (c *NaiveClient) startEngine(tcpDialer Dialer, udpDialer UDPDialer, dnsServ
 	if paramsError == nil {
 		paramsError = params.SetSocketPoolOptions(2048, 2048, 2040)
 	}
+	if paramsError == nil && c.ptlsEnabled {
+		paramsError = params.SetPTLSOptions(true, c.ptlsPSK)
+	}
 	if paramsError != nil {
 		params.Destroy()
 		destroyEngine()
@@ -610,4 +630,18 @@ func (c *trackedNaiveConn) ReaderReplaceable() bool {
 
 func (c *trackedNaiveConn) WriterReplaceable() bool {
 	return true
+}
+
+func parsePtlsPSK(rawPSK string) (string, error) {
+	s := strings.TrimSpace(rawPSK)
+	if s == "" {
+		return "", E.New("ptls: psk cannot be empty")
+	}
+	if len(s) != 64 {
+		return "", E.New("ptls: psk must be a 64-character hex string")
+	}
+	if _, err := hex.DecodeString(s); err != nil {
+		return "", E.Cause(err, "ptls: invalid hex psk")
+	}
+	return strings.ToLower(s), nil
 }

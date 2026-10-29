@@ -175,6 +175,31 @@ func getOpenwrtFlags(t Target) string {
 }
 
 func runGetClang(t Target) {
+	// Windows hosts without bash (get-clang.sh) fetch the toolchain through Chromium's update.py.
+	if _, bashErr := exec.LookPath("bash"); runtime.GOOS == "windows" && bashErr != nil {
+		clangCl := filepath.Join(srcRoot, "third_party", "llvm-build", "Release+Asserts", "bin", "clang-cl.exe")
+		if _, err := os.Stat(clangCl); err == nil {
+			log.Print("clang-cl.exe already exists, skipping toolchain download")
+			return
+		}
+
+		log.Print("Windows host detected: downloading Clang toolchain via update.py...")
+		py := "python"
+		if _, err := exec.LookPath("python3"); err == nil {
+			py = "python3"
+		}
+
+		updateScript := filepath.Join(srcRoot, "tools", "clang", "scripts", "update.py")
+		cmd := exec.Command(py, updateScript)
+		cmd.Dir = srcRoot
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("failed to download windows clang toolchain: %v", err)
+		}
+		return
+	}
+
 	// For cross-compilation on Linux, we need to also build host sysroot first
 	// because GN needs host sysroot in addition to target sysroot.
 	// This applies to linux, android, and openwrt targets.

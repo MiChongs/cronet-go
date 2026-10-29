@@ -143,11 +143,30 @@ func generateAllGoMod(allDirectory, pseudoVersion string, builtTargets []string)
 	}
 	builder.WriteString(")\n")
 
+	// Forks publish under their own repository, so resolve the main module and
+	// lib submodules from it instead of github.com/sagernet/cronet-go.
+	if forkModulePath := getForkModulePath(); forkModulePath != "" {
+		builder.WriteString("\nreplace (\n")
+		fmt.Fprintf(&builder, "\tgithub.com/sagernet/cronet-go => %s %s\n", forkModulePath, pseudoVersion)
+		for _, targetName := range builtTargets {
+			fmt.Fprintf(&builder, "\tgithub.com/sagernet/cronet-go/lib/%s => %s/lib/%s %s\n", targetName, forkModulePath, targetName, pseudoVersion)
+		}
+		builder.WriteString(")\n")
+	}
+
 	goModPath := filepath.Join(allDirectory, "go.mod")
 	err := os.WriteFile(goModPath, []byte(builder.String()), 0o644)
 	if err != nil {
 		log.Fatalf("failed to write go.mod: %v", err)
 	}
+}
+
+func getForkModulePath() string {
+	repository := os.Getenv("GITHUB_REPOSITORY")
+	if repository == "" || strings.EqualFold(repository, "SagerNet/cronet-go") {
+		return ""
+	}
+	return "github.com/" + repository
 }
 
 func generatePlatformImportFile(allDirectory, targetName string) {

@@ -652,6 +652,8 @@ jobs:
     if: github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip publish]')
     needs: [linux, linux-musl, darwin, windows, android, integration-test]
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     env:
       TARGET_BRANCH: ${{ github.ref_name == 'main' && 'go' || 'go_dev' }}
     steps:
